@@ -170,6 +170,62 @@ make format
 - NATS интеграция для событий
 - UI для OAuth flow в CMS
 
+## Encryption
+
+### Encryption Key Setup
+
+Yandex Service использует Fernet (AES-128 CBC + HMAC-SHA256) для шифрования чувствительных данных (OAuth токены, client secrets).
+
+**Генерация ключа:**
+
+```bash
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+```
+
+**Пример ключа:**
+
+```
+ZvJ8Q8X6KqF9nZ5j2rXkM7tYwL3pHbNcRdVsG4aUoE8=
+```
+
+**⚠️ ВАЖНО:**
+
+- Ключ должен быть **32 байта** в формате base64 (44 символа)
+- Сохрани ключ в безопасном месте! Если ключ утрачен, все зашифрованные токены станут недоступны
+- В production используй secrets manager (Vault, AWS Secrets Manager)
+- Никогда не коммить реальные ключи в Git
+
+### Using Encryption in Code
+
+```python
+from src.core.encryption import FernetEncryption
+from src.settings import yandex_settings
+
+# Initialize encryptor
+encryptor = FernetEncryption(yandex_settings.encryption_key)
+
+# Encrypt sensitive data
+access_token = "ya29.a0AfH6SMC..."
+encrypted_token = encryptor.encrypt(access_token)
+# → "gAAAAABhX..."
+
+# Decrypt when needed
+decrypted_token = encryptor.decrypt(encrypted_token)
+# → "ya29.a0AfH6SMC..."
+```
+
+**Error Handling:**
+
+```python
+from cryptography.fernet import InvalidToken
+
+try:
+    plaintext = encryptor.decrypt(corrupted_ciphertext)
+except InvalidToken:
+    # Wrong key, corrupted data, or expired token
+    logger.error("Decryption failed - token may be corrupted")
+```
+
 ## Architecture
 
 Сервис следует Clean Architecture с разделением:
@@ -178,6 +234,7 @@ make format
 - **core/protocols:** Protocol-интерфейсы репозиториев
 - **core/schemas:** DTO для API
 - **core/services:** Use cases и бизнес-логика
+- **core/encryption:** Fernet encryption utilities
 - **models:** SQLAlchemy Core tables
 - **repositories:** Реализации репозиториев
 - **api:** FastAPI routes

@@ -43,7 +43,7 @@ class YandexSettings(BaseSettings):
     """Yandex-specific settings for encryption and OAuth."""
 
     encryption_key: str = Field(
-        default="dev-key-not-for-production-use-replace-in-production-environments",
+        default="vyMdBbiugsC8y7Yu-vbCUm7n9PVImEdb0ui_l5x_bVM=",  # Valid dev key - REPLACE IN PRODUCTION
         alias="YANDEX_ENCRYPTION_KEY",
     )
 
