@@ -6,6 +6,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from prometheus_fastapi_instrumentator import Instrumentator
 
+from api.health import router as health_router
 from core.exceptions import AppError
 from settings import settings
 from utils.configure_sentry import configure_sentry
@@ -37,11 +38,8 @@ app = FastAPI(title=settings.app_title, debug=settings.debug, lifespan=lifespan)
 
 Instrumentator().instrument(app)
 
-
-@app.get("/health", tags=["Health"])
-async def health() -> dict[str, str]:
-    """Health check endpoint - anonymous access allowed."""
-    return {"status": "ok"}
+# Include routers
+app.include_router(health_router)
 
 
 @app.exception_handler(AppError)
