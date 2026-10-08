@@ -1,0 +1,83 @@
+[project]
+name = "yandex-service"
+version = "0.1.0"
+description = "Yandex OAuth and credentials service for EqSiteCMS (PostgreSQL, Fernet encryption)"
+readme = "README.md"
+requires-python = ">=3.13,<3.14"
+dependencies = [
+    "alembic>=1.16",
+    "asyncpg>=0.30",
+    "cryptography>=44.0.0",
+    "fastapi>=0.116",
+    "greenlet>=3.0.0",
+    "pydantic>=2.13.4",
+    "pydantic-settings>=2.10",
+    "sentry-sdk[fastapi,sqlalchemy]>=2.47",
+    "sqlalchemy>=2.0",
+    "uvicorn[standard]>=0.35",
+    "prometheus-fastapi-instrumentator>=8.1.0",
+    "prometheus-client>=0.26.0",
+]
+
+[dependency-groups]
+dev = [
+    "basedpyright>=1.32",
+    "flake8>=7.3",
+    "httpx>=0.28",
+    "mypy>=2.2",
+    "pytest>=8.4",
+    "pytest-asyncio>=1.1",
+    "ruff>=0.12",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = "--strict-markers -m 'not infrastructure'"
+markers = [
+    "infrastructure: requires local infrastructure, another service, an external provider, or secrets",
+]
+
+[tool.ruff]
+line-length = 119
+target-version = "py313"
+extend-exclude = [".github", ".helm"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "ASYNC"]
+
+[tool.ruff.lint.isort]
+known-first-party = [
+    "api",
+    "core",
+    "depends",
+    "models",
+    "repositories",
+    "settings",
+    "utils",
+]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"
+
+[tool.basedpyright]
+include = ["src"]
+extraPaths = ["src"]
+venvPath = "."
+venv = ".venv"
+typeCheckingMode = "standard"
+reportMissingImports = "error"
+reportMissingModuleSource = "error"
+reportImportCycles = "warning"
+
+[tool.mypy]
+python_version = "3.13"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+
+[tool.uv]
+cache-dir = "/home/igor/projects/eqSiteCMS/.cache/uv"
