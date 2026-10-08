@@ -22,13 +22,32 @@ Yandex Service — микросервис для хранения и управ�
 - PostgreSQL 16+
 - Docker & Docker Compose
 
-### 1. Generate Encryption Key
+### Quick Start (Recommended)
+
+Используй Makefile из корня монорепозитория для управления сервисом:
+
+```bash
+# 1. Запустить PostgreSQL инфраструктуру
+make infra
+
+# 2. Применить миграции
+make yandex-migrate
+
+# 3. Запустить сервис (development с hot reload)
+make yandex
+```
+
+Сервис доступен на `http://localhost:8006`
+
+### Encryption Key Generation
+
+Перед первым запуском сгенерируй encryption key:
 
 ```bash
 python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 ```
 
-Скопируй полученный ключ в `.env`:
+Скопируй полученный ключ в `services/yandex-service/.env`:
 
 ```env
 YANDEX_ENCRYPTION_KEY=<your-generated-key>
@@ -36,13 +55,17 @@ YANDEX_ENCRYPTION_KEY=<your-generated-key>
 
 **⚠️ ВАЖНО:** Сохрани ключ в безопасном месте! Если ключ утрачен, все зашифрованные токены станут недоступны.
 
-### 2. Database Setup
+### Manual Setup (Alternative)
 
-Убедись, что PostgreSQL БД `yandex_service` запущена (через infrastructure docker-compose):
+Если нужна ручная настройка:
+
+#### 1. Database Setup
+
+Убедись, что PostgreSQL БД `yandex_service` запущена:
 
 ```bash
 # В корне монорепозитория
-make infra-up
+make infra
 ```
 
 Проверь доступность БД:
@@ -51,19 +74,20 @@ make infra-up
 psql -h localhost -U eqsitecmsyandex -d yandex_service -p 5438 -c "SELECT 1"
 ```
 
-### 3. Install Dependencies
+#### 2. Install Dependencies
 
 ```bash
+cd services/yandex-service
 uv sync
 ```
 
-### 4. Run Migrations
+#### 3. Run Migrations
 
 ```bash
 uv run alembic -c src/alembic.ini upgrade head
 ```
 
-### 5. Run Service
+#### 4. Run Service
 
 **Development (with hot reload):**
 
@@ -124,10 +148,35 @@ docker compose -f docker-compose.prod.yml up -d
 
 ## Testing
 
-### Unit Tests
+### Run All Tests
 
 ```bash
+# В корне монорепозитория
 make test
+
+# Или локально в сервисе
+cd services/yandex-service
+uv run pytest
+```
+
+**Test Coverage:**
+- ✅ Unit tests: Encryption utilities (10 tests)
+- ✅ Integration tests: Health check endpoint (4 tests)
+
+**Total:** 14 tests
+
+### Unit Tests Only
+
+```bash
+cd services/yandex-service
+uv run pytest tests/unit/
+```
+
+### Integration Tests Only
+
+```bash
+cd services/yandex-service
+uv run pytest tests/integration/
 ```
 
 ### Lint & Type Check
@@ -163,12 +212,29 @@ make format
 
 Следующие этапы (не в этом foundation):
 
-- OAuth 2.0 implementation (authorization flow, token refresh)
-- Счётчики Яндекс.Метрика (counters CRUD)
-- Хосты Яндекс.Вебмастер (hosts CRUD)
-- Internal credentials API для парсеров
-- NATS интеграция для событий
-- UI для OAuth flow в CMS
+### Phase 1: OAuth & Accounts Management
+- OAuth 2.0 authorization flow для Яндекс.Метрика/Вебмастер
+- Token refresh mechanism (автоматическое обновление истёкших токенов)
+- Accounts API: создание, чтение, обновление, удаление OAuth аккаунтов
+- Reauth flow для истёкших/отозванных токенов
+
+### Phase 2: Яндекс.Метрика Integration
+- Counters CRUD (управление счётчиками Метрики)
+- Counters permissions (связь счётчиков с yandex_accounts)
+- Internal API для получения credentials парсерами (аутентифицированный доступ)
+
+### Phase 3: Яндекс.Вебмастер Integration
+- Hosts CRUD (управление хостами Вебмастера)
+- Hosts permissions (связь хостов с yandex_accounts)
+
+### Phase 4: Events & Integration
+- NATS integration: обработка событий удаления аккаунтов из `backend-service`
+- Cascade deletion: автоматическое удаление всех связанных данных при `accounts.deleted` event
+
+### Phase 5: UI Integration
+- OAuth flow UI в CMS (redirect, authorization code handling)
+- Counters/Hosts management UI
+- Token status monitoring (requires_reauth indicator)
 
 ## Encryption
 
