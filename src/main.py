@@ -1,14 +1,17 @@
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import APIRouter, FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
+from api import yandex_accounts_router, yandex_auth_router
 from core.exceptions import AppError
 from settings import settings
+from utils.configure_logger import configure_logger
 from utils.configure_sentry import configure_sentry
 from utils.database import close_database
 
+configure_logger(logger_root_name=__name__, logger_prefix_output="eqcms_yandex")
 configure_sentry()
 
 
@@ -19,6 +22,11 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title=settings.app_title, debug=settings.debug, lifespan=lifespan)
+
+router = APIRouter(prefix="/api")
+router.include_router(yandex_auth_router, prefix="/auth", tags=["Yandex Auth"])
+router.include_router(yandex_accounts_router, prefix="/accounts", tags=["Yandex Accounts"])
+app.include_router(router)
 
 
 @app.get("/health", tags=["Health"])

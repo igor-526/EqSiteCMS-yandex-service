@@ -1,7 +1,10 @@
 from functools import cached_property
+from pathlib import Path
 
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+ENV_FILE = Path(__file__).resolve().parent.parent / ".env"
 
 
 class Settings(BaseSettings):
@@ -21,12 +24,16 @@ class Settings(BaseSettings):
     postgres_port: int = Field(default=5432, alias="POSTGRES_PORT")
     postgres_db: str = Field(default="app", alias="POSTGRES_DB")
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    enctyption_service_key: str = Field(default="", alias="ENCRYPTION_SERVICE_KEY")
+
+    model_config = SettingsConfigDict(env_file=ENV_FILE, env_file_encoding="utf-8", extra="ignore")
 
     @model_validator(mode="after")
     def validate_production_secrets(self) -> Settings:
         if self.sentry_enabled and not self.sentry_dsn:
             raise ValueError("SENTRY_DSN is required when SENTRY_ENABLED=true")
+        if self.enctyption_service_key == "":
+            raise ValueError("ENCRYPTION_SERVICE_KEY is required")
         return self
 
     @cached_property
@@ -37,4 +44,13 @@ class Settings(BaseSettings):
         )
 
 
+class YandexAppSettings(BaseSettings):
+    yandex_app_client_id: str = Field(default=..., alias="YANDEX_APP_CLIENT_ID")
+    yandex_app_client_secret: str = Field(default=..., alias="YANDEX_APP_CLIENT_SECRET")
+    yandex_app_redirect_uri: str = Field(default=..., alias="YANDEX_APP_REDIRECT_URI")
+
+    model_config = SettingsConfigDict(env_file=ENV_FILE, env_file_encoding="utf-8", extra="ignore")
+
+
 settings = Settings()
+yandex_app_settings = YandexAppSettings()

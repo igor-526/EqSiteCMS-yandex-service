@@ -1,13 +1,15 @@
 [project]
-name = "fastapi-template"
+name = "yandex-service"
 version = "0.1.0"
-description = "FastAPI template with Clean Architecture and PostgreSQL"
+description = "Yandex Serevice for Equestrian Site CMS"
 readme = "README.md"
 requires-python = ">=3.14,<3.15"
 dependencies = [
     "alembic>=1.16",
     "asyncpg>=0.30",
+    "cryptography>=50.0.2",
     "fastapi>=0.116",
+    "httpx>=0.28.1",
     "pydantic-settings>=2.10",
     "sentry-sdk[fastapi,sqlalchemy]>=2.47",
     "sqlalchemy>=2.0",
