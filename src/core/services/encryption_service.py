@@ -4,7 +4,7 @@ import hashlib
 from cryptography.fernet import Fernet, InvalidToken
 
 
-class EnctryptionService:
+class EncryptionService:
     def __init__(self, secret_key: str) -> None:
         digest = hashlib.sha256(secret_key.encode("utf-8")).digest()
         fernet_key = base64.urlsafe_b64encode(digest)

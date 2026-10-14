@@ -8,7 +8,7 @@ from core.protocols.clients import YandexOAuthClientProtocol
 from core.protocols.repositories import YandexUserRepositoryProtocol
 from core.schemas.api import YandexAccountOutDto, YandexAuthCodeInDto
 
-from .encryption_service import EnctryptionService
+from .encryption_service import EncryptionService
 
 logger = logging.getLogger("Yandex Oauth Service")
 
@@ -17,7 +17,7 @@ class YandexOauthService:
     def __init__(
         self,
         client: YandexOAuthClientProtocol,
-        encryption_service: EnctryptionService,
+        encryption_service: EncryptionService,
         yandex_user_repository: YandexUserRepositoryProtocol,
     ) -> None:
         self._client = client

@@ -4,7 +4,8 @@ from fastapi import APIRouter, FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
-from api import yandex_accounts_router, yandex_auth_router
+from api import yandex_accounts, yandex_accounts_router, yandex_auth, yandex_auth_router
+from containers import services_container
 from core.exceptions import AppError
 from settings import settings
 from utils.configure_logger import configure_logger
@@ -21,7 +22,12 @@ async def lifespan(_: FastAPI):
     await close_database()
 
 
+services_container.wire(
+    modules=[yandex_auth, yandex_accounts],
+)
+
 app = FastAPI(title=settings.app_title, debug=settings.debug, lifespan=lifespan)
+app.state.container = services_container
 
 router = APIRouter(prefix="/api")
 router.include_router(yandex_auth_router, prefix="/auth", tags=["Yandex Auth"])

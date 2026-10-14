@@ -8,6 +8,7 @@ dependencies = [
     "alembic>=1.16",
     "asyncpg>=0.30",
     "cryptography>=50.0.2",
+    "dependency-injector>=4.49.1",
     "fastapi>=0.116",
     "httpx>=0.28.1",
     "pydantic-settings>=2.10",

@@ -7,7 +7,7 @@ from core.entities import YandexUser
 from core.exceptions import AppError, ClientError, RepositoryError, YandexClientException
 from core.schemas.api import YandexAuthCodeInDto
 from core.schemas.clients import YandexClientAuthResponse, YandexClientUserResponse, YandexClientUserResponsePhone
-from core.services import EnctryptionService, YandexOauthService
+from core.services import EncryptionService, YandexOauthService
 
 
 class FakeYandexClient:
@@ -70,8 +70,8 @@ class FailingYandexUserRepository(FakeYandexUserRepository):
         raise RepositoryError("database unavailable")
 
 
-def make_service(repository: FakeYandexUserRepository) -> tuple[YandexOauthService, EnctryptionService]:
-    encryption_service = EnctryptionService(secret_key="test-secret")
+def make_service(repository: FakeYandexUserRepository) -> tuple[YandexOauthService, EncryptionService]:
+    encryption_service = EncryptionService(secret_key="test-secret")
     service = YandexOauthService(
         client=FakeYandexClient(),  # type: ignore[arg-type]
         encryption_service=encryption_service,
@@ -86,7 +86,7 @@ def make_service_with_client(
 ) -> YandexOauthService:
     return YandexOauthService(
         client=client,  # type: ignore[arg-type]
-        encryption_service=EnctryptionService(secret_key="test-secret"),
+        encryption_service=EncryptionService(secret_key="test-secret"),
         yandex_user_repository=repository,  # type: ignore[arg-type]
     )
 
