@@ -52,5 +52,8 @@ class YandexAppSettings(BaseSettings):
     model_config = SettingsConfigDict(env_file=ENV_FILE, env_file_encoding="utf-8", extra="ignore")
 
 
+class YandexMetricaServiceSettings(BaseSettings):
+    ya_metrica_service_url: str = Field(default=..., alias="YA_METRTICA_SERVICE_URL")
+
+
 settings = Settings()
-yandex_app_settings = YandexAppSettings()

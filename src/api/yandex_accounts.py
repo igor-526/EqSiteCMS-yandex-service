@@ -8,8 +8,9 @@ from containers.services import ServicesContainer
 from core.entities import PaginatedEntities
 from core.schemas.api import YandexAccountOutDto
 from core.services import YandexAccountsService
+from utils.transactional_route import TransactionalRoute
 
-router = APIRouter()
+router = APIRouter(route_class=TransactionalRoute)
 
 
 @router.get("/", response_model=PaginatedEntities[YandexAccountOutDto])

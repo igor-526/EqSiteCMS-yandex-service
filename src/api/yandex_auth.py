@@ -7,8 +7,9 @@ from fastapi import APIRouter, Depends
 from containers.services import ServicesContainer
 from core.schemas.api import YandexAccountOutDto, YandexAuthCodeInDto, YandexAuthLinkOutDto
 from core.services.yandex_oauth_service import YandexOauthService
+from utils.transactional_route import TransactionalRoute
 
-router = APIRouter()
+router = APIRouter(route_class=TransactionalRoute)
 
 
 @router.get("/link", response_model=YandexAuthLinkOutDto)

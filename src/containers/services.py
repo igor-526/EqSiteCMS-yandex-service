@@ -3,6 +3,7 @@ from dependency_injector import containers, providers
 from core.services import (
     EncryptionService,
     YandexAccountsService,
+    YandexMetricaService,
     YandexOauthService,
     YandexServiceAuthorizationService,
 )
@@ -29,4 +30,10 @@ class ServicesContainer(containers.DeclarativeContainer):
         YandexServiceAuthorizationService,
         encryption_service=encryption_service,
         yandex_user_repository=repositories_container.yandex_user_repository,
+    )
+    ya_metrica_service = providers.Factory(
+        YandexMetricaService,
+        encryption_service=encryption_service,
+        yandex_user_repository=repositories_container.yandex_user_repository,
+        yandex_metrica_client=clients_container.ya_metrica_service_client,
     )

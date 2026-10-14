@@ -7,8 +7,9 @@ from fastapi import APIRouter, Depends
 from containers.services import ServicesContainer
 from core.schemas.api import ServiceAuthorizationAccessTokenOutDto
 from core.services import YandexServiceAuthorizationService
+from utils.transactional_route import TransactionalRoute
 
-router = APIRouter()
+router = APIRouter(route_class=TransactionalRoute)
 
 
 @router.get("/access-token/{account_id}", response_model=ServiceAuthorizationAccessTokenOutDto)

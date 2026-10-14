@@ -5,6 +5,6 @@ from repositories import YandexUserRepository
 
 
 class RepositoriesContainer(containers.DeclarativeContainer):
-    session = providers.Resource(get_session)
+    session = providers.ContextLocalResource(get_session)
 
     yandex_user_repository = providers.Factory(YandexUserRepository, session=session)

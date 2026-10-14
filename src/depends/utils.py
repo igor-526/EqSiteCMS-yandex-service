@@ -6,12 +6,5 @@ from utils.database import AsyncSessionLocal
 
 
 async def get_session() -> AsyncGenerator[AsyncSession]:
-    session: AsyncSession = AsyncSessionLocal()
-    try:
+    async with AsyncSessionLocal() as session:
         yield session
-        await session.commit()
-    except Exception:
-        await session.rollback()
-        raise
-    finally:
-        await session.close()
