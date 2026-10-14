@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from sqlalchemy import Table, or_, select
+from sqlalchemy import ColumnElement, Table, func, or_, select
 from sqlalchemy.exc import SQLAlchemyError
 
 from core.entities import YandexUser
@@ -14,20 +14,33 @@ class YandexUserRepository(AbstractRepository[YandexUser]):
     table: Table = yandex_user
     entity = YandexUser
 
-    async def get_filtered(
-        self, *, equestrian_id: UUID, search: str | None = None, limit: int = 20, offset: int = 0
-    ) -> list[YandexUser]:
-        stmt = select(self.table).where(self.table.c.equestrian_id == equestrian_id)
-
+    def _filter_conditions(self, *, equestrian_id: UUID, search: str | None) -> list[ColumnElement[bool]]:
+        conditions = [self.table.c.equestrian_id == equestrian_id]
         if search is not None:
             pattern = f"%{search}%"
-            stmt = stmt.where(
+            conditions.append(
                 or_(
                     self.table.c.yandex_login.ilike(pattern),
                     self.table.c.display_name.ilike(pattern),
                     self.table.c.email.ilike(pattern),
                 )
             )
+        return conditions
+
+    async def count_filtered(self, *, equestrian_id: UUID, search: str | None = None) -> int:
+        """Count matching accounts without pagination."""
+        stmt = (
+            select(func.count())
+            .select_from(self.table)
+            .where(*self._filter_conditions(equestrian_id=equestrian_id, search=search))
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar_one()
+
+    async def get_filtered(
+        self, *, equestrian_id: UUID, search: str | None = None, limit: int = 20, offset: int = 0
+    ) -> list[YandexUser]:
+        stmt = select(self.table).where(*self._filter_conditions(equestrian_id=equestrian_id, search=search))
 
         stmt = stmt.order_by(self.table.c.created_at.desc()).limit(limit).offset(offset)
         rows = await self.session.execute(stmt)
