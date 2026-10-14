@@ -1,6 +1,11 @@
 from dependency_injector import containers, providers
 
-from core.services import EncryptionService, YandexAccountsService, YandexOauthService
+from core.services import (
+    EncryptionService,
+    YandexAccountsService,
+    YandexOauthService,
+    YandexServiceAuthorizationService,
+)
 
 
 class ServicesContainer(containers.DeclarativeContainer):
@@ -19,4 +24,9 @@ class ServicesContainer(containers.DeclarativeContainer):
     )
     yandex_accounts_service = providers.Factory(
         YandexAccountsService, yandex_user_repository=repositories_container.yandex_user_repository
+    )
+    yandex_service_authorization_service = providers.Factory(
+        YandexServiceAuthorizationService,
+        encryption_service=encryption_service,
+        yandex_user_repository=repositories_container.yandex_user_repository,
     )

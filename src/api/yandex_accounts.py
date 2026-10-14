@@ -12,7 +12,7 @@ from core.services import YandexAccountsService
 router = APIRouter()
 
 
-@router.get("/{slug_or_id}", response_model=PaginatedEntities[YandexAccountOutDto])
+@router.get("/", response_model=PaginatedEntities[YandexAccountOutDto])
 @inject
 async def list_filtered(
     service: Annotated[YandexAccountsService, Depends(Provide[ServicesContainer.yandex_accounts_service])],
