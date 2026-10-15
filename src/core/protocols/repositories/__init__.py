@@ -1,5 +1,4 @@
 from .yandex_account_repository import YandexUserRepositoryProtocol
+from .yandex_metrica_counter_repository import YandexMetricaCounterRepositoryProtocol
 
-__all__ = [
-    "YandexUserRepositoryProtocol",
-]
+__all__ = ["YandexUserRepositoryProtocol", "YandexMetricaCounterRepositoryProtocol"]

@@ -11,6 +11,8 @@ from api import (
     yandex_accounts_router,
     yandex_auth,
     yandex_auth_router,
+    yandex_connections,
+    yandex_connections_router,
     yandex_metrica,
     yandex_metrica_router,
 )
@@ -32,7 +34,7 @@ async def lifespan(_: FastAPI):
 
 
 services_container.wire(
-    modules=[yandex_auth, yandex_accounts, servicing, yandex_metrica],
+    modules=[yandex_auth, yandex_accounts, servicing, yandex_metrica, yandex_connections],
 )
 
 app = FastAPI(title=settings.app_title, debug=settings.debug, lifespan=lifespan)
@@ -43,6 +45,7 @@ router.include_router(yandex_auth_router, prefix="/auth", tags=["Yandex Auth"])
 router.include_router(yandex_accounts_router, prefix="/accounts", tags=["Yandex Accounts"])
 router.include_router(servicing_router, prefix="/servicing", tags=["Servicing"])
 router.include_router(yandex_metrica_router, prefix="/metrica", tags=["Yandex Metrica"])
+router.include_router(yandex_connections_router, prefix="/connections", tags=["Connections"])
 app.include_router(router)
 
 

@@ -19,6 +19,7 @@ yandex_metrica_counters = Table(
         "equestrian_id",
         PG_UUID(as_uuid=True),
         default=uuid.uuid4,
+        unique=True,
     ),
     Column("yandex_user_id", ForeignKey("yandex_user.id", ondelete="CASCADE"), nullable=False),
     Column("counter_id", String(31), nullable=False),
