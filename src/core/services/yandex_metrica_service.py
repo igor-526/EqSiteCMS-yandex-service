@@ -1,10 +1,10 @@
 import logging
-from typing import Any
 from uuid import UUID
 
 from core.exceptions import ClientError
 from core.protocols.clients import YaMetricaServiceClientProtocol
 from core.protocols.repositories import YandexUserRepositoryProtocol
+from core.schemas.api import YandexMetricaCounterResponseOutDto
 
 from .encryption_service import EncryptionService
 
@@ -24,7 +24,7 @@ class YandexMetricaService:
 
     async def get_counters(
         self, *, account_id: UUID, search: str | None = None, limit: int = 20, offset: int = 0
-    ) -> Any:
+    ) -> YandexMetricaCounterResponseOutDto:
         if limit < 1:
             limit = 1
         elif limit > 100:
@@ -34,13 +34,7 @@ class YandexMetricaService:
         yandex_account = await self._yandex_user_repository.get_by_id(id=account_id)
         if yandex_account is None:
             raise ClientError("Аккаунт не найден")
-        try:
-            access_token = self._encryption_service.decrypt(data=yandex_account.enc_access_token)
-        except ValueError as ve:
-            logger.error("Error while decrypting access token")
-            raise ClientError("Ошибка расшифровки токена") from ve
-        except Exception as ex:
-            logger.error(f"Error: {ex}")
-            raise ClientError(f"Ошибка: {ex}") from ex
-        counters = await self._yandex_metrica_client.get_metrica_counters(access_token=access_token, search=search)
-        return counters
+        counters = await self._yandex_metrica_client.get_metrica_counters(
+            access_token=yandex_account.enc_access_token, search=search, limit=limit, offset=offset
+        )
+        return YandexMetricaCounterResponseOutDto.model_validate(counters)

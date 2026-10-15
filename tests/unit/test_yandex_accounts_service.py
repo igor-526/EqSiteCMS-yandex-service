@@ -98,3 +98,41 @@ async def test_get_filtered_accounts_offset_beyond_results_keeps_total() -> None
     assert result.total == 7
     repository.count_filtered.assert_awaited_once_with(equestrian_id=equestrian_id, search="login")
     repository.get_filtered.assert_awaited_once_with(equestrian_id=equestrian_id, search="login", limit=5, offset=100)
+
+
+@pytest.mark.parametrize("limit,expected", [(-1, 1), (0, 1), (1, 1), (100, 100), (101, 100)])
+@pytest.mark.parametrize("offset,expected_offset", [(-1, 0), (0, 0), (1000000, 1000000)])
+async def test_account_pagination_clamps_bounds(limit: int, expected: int, offset: int, expected_offset: int) -> None:
+    repository = AsyncMock(spec=YandexUserRepositoryProtocol)
+    repository.get_filtered.return_value = []
+    repository.count_filtered.return_value = 12
+    tenant = uuid4()
+    result = await YandexAccountsService(repository).list_filtered(equestrian_id=tenant, limit=limit, offset=offset)
+    repository.get_filtered.assert_awaited_once_with(
+        equestrian_id=tenant, search=None, limit=expected, offset=expected_offset
+    )
+    repository.count_filtered.assert_awaited_once_with(equestrian_id=tenant, search=None)
+    assert result.total == 12
+    assert result.items == []
+
+
+@pytest.mark.parametrize("stage", ["get_filtered", "count_filtered"])
+async def test_list_repository_errors_propagate(stage: str) -> None:
+    repository = AsyncMock(spec=YandexUserRepositoryProtocol)
+    repository.get_filtered.return_value = []
+    error = RuntimeError("database unavailable")
+    getattr(repository, stage).side_effect = error
+    with pytest.raises(RuntimeError) as caught:
+        await YandexAccountsService(repository).list_filtered(equestrian_id=uuid4())
+    assert caught.value is error
+    if stage == "get_filtered":
+        repository.count_filtered.assert_not_awaited()
+
+
+async def test_delete_missing_account_delegates_without_prelookup() -> None:
+    repository = AsyncMock(spec=YandexUserRepositoryProtocol)
+    repository.delete.return_value = None
+    account_id = uuid4()
+    await YandexAccountsService(repository).delete_account(account_id=account_id)
+    repository.delete.assert_awaited_once_with(id=account_id)
+    repository.get_by_id.assert_not_awaited()

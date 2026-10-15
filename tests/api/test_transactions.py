@@ -12,13 +12,14 @@ from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
 from starlette.types import Message, Receive, Scope, Send
 
-from api import servicing, yandex_accounts, yandex_auth
+from api import servicing, yandex_accounts, yandex_auth, yandex_metrica
 from containers.repositories import RepositoriesContainer
 from containers.services import ServicesContainer
 from core.exceptions import AppError, ClientError
 from core.services import YandexAccountsService
 from depends import utils as session_dependencies
 from repositories import YandexUserRepository
+from tests.api.conftest import RuntimeApi
 from utils import transactional_route
 
 
@@ -177,7 +178,7 @@ async def test_sequential_requests_release_context(transaction_app: TransactionA
 
 
 def test_all_api_routers_use_transactional_routes() -> None:
-    for module in (servicing, yandex_accounts, yandex_auth):
+    for module in (servicing, yandex_accounts, yandex_auth, yandex_metrica):
         assert module.router.routes
         assert all(isinstance(route, transactional_route.TransactionalRoute) for route in module.router.routes)
 
@@ -192,3 +193,87 @@ def test_health_does_not_open_a_session(monkeypatch: pytest.MonkeyPatch) -> None
     response = TestClient(app).get("/health")
 
     assert response.status_code == 200
+
+
+# API-05/06 exercise the runtime routes in addition to the synthetic DI probe.
+@pytest.mark.parametrize(
+    ("method", "url", "service", "operation"),
+    [
+        ("get", "/api/auth/link?equestrian_id=11111111-1111-4111-8111-111111111111", "oauth", "get_auth_link"),
+        ("post", "/api/auth/code", "oauth", "authenticate"),
+        ("get", "/api/accounts/?equestrian_id=11111111-1111-4111-8111-111111111111", "accounts", "list_filtered"),
+        ("delete", "/api/accounts/11111111-1111-4111-8111-111111111111", "accounts", "delete_account"),
+        ("get", "/api/servicing/access-token/11111111-1111-4111-8111-111111111111", "authorization", "get_token"),
+        ("get", "/api/metrica/counters?account_id=11111111-1111-4111-8111-111111111111", "metrica", "get_counters"),
+    ],
+)
+async def test_runtime_commit_failure_rolls_back_before_response(
+    runtime_api: RuntimeApi, method: str, url: str, service: str, operation: str
+) -> None:
+    mock = getattr(getattr(runtime_api, service), operation)
+    result = mock.return_value
+
+    def fail_commit(*args: object, **kwargs: object) -> object:
+        runtime_api.sessions[0].fail_commit = True
+        return result
+
+    mock.side_effect = fail_commit
+    async with runtime_api.client() as client:
+        response = await client.request(
+            method, url, json={"code": "abc", "equestrian_id": "11111111-1111-4111-8111-111111111111"}
+        )
+    assert response.status_code == 500
+    runtime_api.assert_transaction(500, "rollback")
+
+
+async def test_runtime_concurrent_and_sequential_sessions(runtime_api: RuntimeApi) -> None:
+    from containers import repositories_container
+
+    both_arrived = asyncio.Event()
+    sessions: list[object] = []
+
+    async def counters(**kwargs: object) -> dict[str, object]:
+        session = await repositories_container.session.async_()
+        sessions.append(session)
+        if len(sessions) == 2:
+            both_arrived.set()
+        await asyncio.wait_for(both_arrived.wait(), timeout=5)
+        return {"total": 0, "items": []}
+
+    runtime_api.metrica.get_counters.side_effect = counters
+    url = "/api/metrica/counters?account_id=11111111-1111-4111-8111-111111111111"
+    async with runtime_api.client() as client:
+        responses = await asyncio.gather(client.get(url), client.get(url))
+        third = await client.get(url)
+    assert [response.status_code for response in [*responses, third]] == [200, 200, 200]
+    assert len({id(session) for session in sessions}) == 3
+    assert sessions == runtime_api.sessions
+    assert all(session.closed for session in runtime_api.sessions)
+    assert runtime_api.events.count("response:200") == 3
+    for session in runtime_api.sessions:
+        assert runtime_api.events.index(f"{session.number}:commit") < runtime_api.events.index(
+            f"{session.number}:close"
+        )
+    assert not repositories_container.session.initialized
+
+
+async def test_runtime_cancellation_rolls_back_and_releases_session(runtime_api: RuntimeApi) -> None:
+    from containers import repositories_container
+
+    entered = asyncio.Event()
+    never_finished = asyncio.Event()
+
+    async def wait_forever(**kwargs: object) -> None:
+        entered.set()
+        await never_finished.wait()
+
+    runtime_api.metrica.get_counters.side_effect = wait_forever
+    async with runtime_api.client() as client:
+        task = asyncio.create_task(client.get("/api/metrica/counters?account_id=11111111-1111-4111-8111-111111111111"))
+        await asyncio.wait_for(entered.wait(), timeout=5)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+    assert runtime_api.events == ["1:open", "1:begin", "1:rollback", "1:close"]
+    assert runtime_api.sessions[0].closed
+    assert not repositories_container.session.initialized

@@ -1,4 +1,4 @@
-.PHONY: format lint test test-infra makemigrations
+.PHONY: format lint test test-infra test-coverage makemigrations
 
 format:
 	uv run ruff check . --fix
@@ -11,6 +11,9 @@ lint:
 
 test:
 	uv run pytest -m "not infrastructure"
+
+test-coverage:
+	uv run pytest -m "not infrastructure" --cov=src --cov-branch --cov-report=term-missing --cov-report=html:artifacts/coverage/html --cov-report=json:artifacts/coverage/coverage.json --cov-fail-under=95 -ra
 
 test-infra:
 	@uv run pytest -m infrastructure; status=$$?; \

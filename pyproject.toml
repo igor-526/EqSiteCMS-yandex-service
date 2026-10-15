@@ -25,6 +25,7 @@ dev = [
     "mypy>=2.2",
     "pytest>=8.4",
     "pytest-asyncio>=1.1",
+    "pytest-cov>=7.0",
     "ruff>=0.12",
 ]
 
@@ -36,6 +37,16 @@ addopts = "--strict-markers"
 markers = [
     "infrastructure: requires local infrastructure, another service, an external provider, or secrets",
 ]
+
+[tool.coverage.run]
+branch = true
+source = ["src"]
+omit = ["src/migration/*"]
+
+[tool.coverage.report]
+# Dependency Injector emits virtual .pyx filenames under src; report real Python files.
+include = ["src/**/*.py"]
+show_missing = true
 
 [tool.ruff]
 line-length = 119
