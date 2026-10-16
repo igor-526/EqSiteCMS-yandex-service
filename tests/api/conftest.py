@@ -1,6 +1,6 @@
 """Real application HTTP harness, with context-local transactions and scoped DI."""
 
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncIterator, Callable, Iterator
 from contextlib import asynccontextmanager
 from typing import Any
 from unittest.mock import AsyncMock, Mock
@@ -25,7 +25,32 @@ ACCOUNT = {
     "email": None,
     "yandex_phone": None,
 }
-AUTH_HEADERS = [{}, {"Authorization": "Bearer fake-caller"}]
+AUTH_HEADERS = [{}, {"Authorization": "Bearer fake-caller", "Cookie": "session=fake-caller"}]
+
+
+@pytest.fixture
+def mock_upstream(
+    monkeypatch: pytest.MonkeyPatch,
+) -> Callable[[Callable[[httpx.Request], httpx.Response]], list[httpx.Request]]:
+    """Replace only network transport, retaining actual clients and their lifecycle."""
+    real_client = httpx.AsyncClient
+
+    def install(handler: Callable[[httpx.Request], httpx.Response]) -> list[httpx.Request]:
+        requests: list[httpx.Request] = []
+
+        def observed(request: httpx.Request) -> httpx.Response:
+            requests.append(request)
+            return handler(request)
+
+        def client_factory(**kwargs: Any) -> httpx.AsyncClient:
+            # RuntimeApi supplies ASGITransport explicitly; never replace it.
+            kwargs.setdefault("transport", httpx.MockTransport(observed))
+            return real_client(**kwargs)
+
+        monkeypatch.setattr(httpx, "AsyncClient", client_factory)
+        return requests
+
+    return install
 
 
 class RequestSession:

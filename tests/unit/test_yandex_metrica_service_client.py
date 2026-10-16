@@ -1,4 +1,7 @@
+import asyncio
 import json
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 from urllib.parse import parse_qs
 
 import httpx
@@ -69,7 +72,7 @@ async def test_default_get_and_timeout(monkeypatch, client) -> None:
     assert clients[0].is_closed
 
 
-@pytest.mark.parametrize("status", [199, 200, 299, 300, 400, 500])
+@pytest.mark.parametrize("status", [199, 200, 299, 300, 400, 401, 403, 429, 500, 503])
 @pytest.mark.parametrize("payload", [{}, {"error": "invalid_token", "error_description": "Expired"}])
 async def test_status_boundaries_and_error_fields(monkeypatch, client, status: int, payload: dict) -> None:
     """UT-HTTP-04: JSON is decoded for every status, only 2xx succeeds."""
@@ -79,11 +82,11 @@ async def test_status_boundaries_and_error_fields(monkeypatch, client, status: i
     else:
         with pytest.raises(YandexClientException) as caught:
             await client.make_request(url="RESOURCE")
-        expected = f"Yandex Client exception \nStatus code: {status}"
-        if payload:
-            expected += "\nError: invalid_token\nError description: Expired"
-        assert str(caught.value) == expected
-        assert caught.value.message == expected
+        assert caught.value.status == status
+        assert caught.value.category == "http"
+        assert caught.value.message == str(caught.value)
+        assert "invalid_token" not in caught.value.message
+        assert "Expired" not in caught.value.message
     assert clients[0].is_closed
 
 
@@ -96,24 +99,39 @@ async def test_non_dict_json_is_rejected(monkeypatch, client, status: int, paylo
     )
     with pytest.raises(YandexClientException) as caught:
         await client.make_request(url="RESOURCE")
-    assert str(caught.value) == f"Yandex Client exception \nStatus code: {status}\nError: Empty response"
+    assert caught.value.status == status
+    assert caught.value.category == ("response" if status == 200 else "http")
     assert clients[0].is_closed
 
 
-@pytest.mark.parametrize("status", [200, 500])
-async def test_gap_http_01_invalid_json_propagates_after_close(monkeypatch, client, status: int) -> None:
-    """UT-HTTP-05 / GAP-HTTP-01: even a 500 can escape before status mapping."""
-    clients = mock_http_transport(
-        monkeypatch, client_module, lambda request: httpx.Response(status, content="not JSON")
-    )
-    with pytest.raises(json.JSONDecodeError):
+@pytest.mark.parametrize("body", ["", "<html>secret-marker</html>"])
+@pytest.mark.parametrize("status", [200, 199, 300, 400, 401, 403, 429, 500, 503])
+async def test_invalid_json_is_normalized_after_close(monkeypatch, client, status: int, body: str) -> None:
+    """UT-C-04/05: status takes precedence over decoding."""
+    clients = mock_http_transport(monkeypatch, client_module, lambda request: httpx.Response(status, content=body))
+    with pytest.raises(YandexClientException) as caught:
         await client.make_request(url="RESOURCE")
+    assert caught.value.status == status
+    assert caught.value.category == ("response" if status == 200 else "http")
+    if status == 200:
+        assert isinstance(caught.value.__cause__, json.JSONDecodeError)
     assert clients[0].is_closed
 
 
-@pytest.mark.parametrize("error_type", [httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadTimeout])
-async def test_gap_http_01_transport_error_propagates_and_closes(monkeypatch, client, error_type) -> None:
-    """UT-HTTP-05 / GAP-HTTP-01: network errors are not translated."""
+@pytest.mark.parametrize(
+    "error_type",
+    [
+        httpx.ConnectError,
+        httpx.ReadError,
+        httpx.RemoteProtocolError,
+        httpx.ConnectTimeout,
+        httpx.ReadTimeout,
+        httpx.WriteTimeout,
+        httpx.PoolTimeout,
+    ],
+)
+async def test_transport_error_is_normalized_and_closes(monkeypatch, client, error_type) -> None:
+    """UT-C-02/03: all transport failures preserve their cause."""
     errors = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -122,9 +140,11 @@ async def test_gap_http_01_transport_error_propagates_and_closes(monkeypatch, cl
         raise error
 
     clients = mock_http_transport(monkeypatch, client_module, handler)
-    with pytest.raises(error_type) as caught:
+    with pytest.raises(YandexClientException) as caught:
         await client.make_request(url="RESOURCE")
-    assert caught.value is errors[0]
+    assert caught.value.__cause__ is errors[0]
+    assert caught.value.status is None
+    assert caught.value.category == ("timeout" if issubclass(error_type, httpx.TimeoutException) else "transport")
     assert clients[0].is_closed
 
 
@@ -156,8 +176,10 @@ async def test_counters_wire_query_and_dto(monkeypatch, client, custom_query: bo
 @pytest.mark.parametrize("payload", [{}, {"total": "bad"}, {"total": 1, "items": [{"counter_id": 42}]}])
 async def test_counter_response_dto_validation(monkeypatch, client, payload: dict) -> None:
     clients = mock_http_transport(monkeypatch, client_module, lambda request: httpx.Response(200, json=payload))
-    with pytest.raises(ValidationError):
+    with pytest.raises(YandexClientException) as caught:
         await client.get_metrica_counters(access_token="token")
+    assert isinstance(caught.value.__cause__, ValidationError)
+    assert caught.value.category == "response"
     assert clients[0].is_closed
 
 
@@ -166,3 +188,97 @@ async def test_counter_response_defaults_to_empty_items(monkeypatch, client) -> 
     dto = await client.get_metrica_counters(access_token="token")
     assert dto.total == 0 and dto.items == []
     assert clients[0].is_closed
+
+
+@pytest.mark.parametrize("phase", ["construct", "enter", "request", "exit"])
+@pytest.mark.parametrize("error_type", [RuntimeError, httpx.ReadTimeout])
+async def test_lifecycle_failure(monkeypatch, client, phase, error_type) -> None:
+    """UT-C-03: constructor, enter, request and close are within the boundary."""
+    original = error_type("secret-marker")
+    closed = []
+
+    class LifecycleClient:
+        async def __aenter__(self):
+            if phase == "enter":
+                raise original
+            return self
+
+        async def request(self, **kwargs):
+            if phase == "request":
+                raise original
+            return httpx.Response(200, json={})
+
+        async def __aexit__(self, *args):
+            closed.append(True)
+            if phase == "exit":
+                raise original
+
+    def factory(**kwargs):
+        if phase == "construct":
+            raise original
+        return LifecycleClient()
+
+    namespace = vars(httpx).copy()
+    namespace["AsyncClient"] = factory
+    monkeypatch.setattr(client_module, "httpx", SimpleNamespace(**namespace))
+    with pytest.raises(YandexClientException) as caught:
+        await client.make_request(url="RESOURCE")
+    assert caught.value.__cause__ is original
+    assert caught.value.status == (200 if phase == "exit" else None)
+    assert "secret-marker" not in str(caught.value)
+    assert bool(closed) == (phase in {"request", "exit"})
+
+
+@pytest.mark.parametrize("original", [asyncio.CancelledError(), BaseException("system"), YandexClientException(403)])
+async def test_request_cancellation_and_typed_failure(monkeypatch, client, original) -> None:
+    """UT-C-08: cancellation/system errors and already typed failures retain identity."""
+
+    def handler(request):
+        raise original
+
+    clients = mock_http_transport(monkeypatch, client_module, handler)
+    with pytest.raises(type(original)) as caught:
+        await client.make_request(url="RESOURCE")
+    assert caught.value is original
+    assert clients[0].is_closed
+
+
+@pytest.mark.parametrize("kind", ["http", "json", "transport", "dto"])
+async def test_safe_diagnostics(monkeypatch, client, caplog, capsys, kind) -> None:
+    """UT-C-09: body, URL, token, exception and invalid DTO are never printed."""
+    marker = "secret-marker"
+
+    def handler(request):
+        if kind == "transport":
+            raise httpx.ConnectError(marker, request=request)
+        if kind == "json":
+            return httpx.Response(200, content=marker)
+        if kind == "dto":
+            return httpx.Response(200, json={"total": marker, "access_token": marker})
+        return httpx.Response(400, json={"error": marker, "error_description": marker})
+
+    clients = mock_http_transport(monkeypatch, client_module, handler)
+    with pytest.raises(YandexClientException) as caught:
+        await client.get_metrica_counters(access_token="secret-marker")
+    assert marker not in caught.value.message
+    assert marker not in str(caught.value)
+    assert marker not in repr(caught.value)
+    assert marker not in caplog.text
+    captured = capsys.readouterr()
+    assert marker not in captured.out + captured.err
+    assert clients[0].is_closed
+
+
+@pytest.mark.parametrize(
+    "original", [asyncio.CancelledError(), YandexClientException(None), RuntimeError("secret-marker")]
+)
+async def test_high_level_boundary(monkeypatch, client, original) -> None:
+    """UT-C-08: high-level methods also guard ordinary failures without double wrapping."""
+    monkeypatch.setattr(client, "make_request", AsyncMock(side_effect=original))
+    expected_type = type(original) if not isinstance(original, RuntimeError) else YandexClientException
+    with pytest.raises(expected_type) as caught:
+        await client.get_metrica_counters(access_token="secret-marker")
+    if isinstance(original, RuntimeError):
+        assert caught.value.__cause__ is original
+    else:
+        assert caught.value is original

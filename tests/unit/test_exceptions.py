@@ -19,18 +19,21 @@ def test_repository_error_preserves_standard_exception_message() -> None:
     assert issubclass(AlreadyExistsError, ClientError)
 
 
-@pytest.mark.parametrize("error", [None, "", "invalid_token"])
-@pytest.mark.parametrize("description", [None, "", "provider explanation"])
-def test_yandex_error_optional_message_fields(error: str | None, description: str | None) -> None:
-    exception = YandexClientException(401, error, description)
-    expected = "Yandex Client exception \nStatus code: 401"
-    if error:
-        expected += f"\nError: {error}"
-    if description:
-        expected += f"\nError description: {description}"
-    assert exception.message == str(exception) == expected
-    assert exception.args == (expected,)
+@pytest.mark.parametrize("status", [None, 401, 503])
+@pytest.mark.parametrize("error", [None, "", "secret-marker"])
+@pytest.mark.parametrize("description", [None, "", "secret-marker"])
+def test_yandex_error_legacy_arguments_are_safe(status, error, description) -> None:
+    """UT-C-09: preserve numeric positional calls/.message without reflecting secrets."""
+    exception = YandexClientException(status, error, description)
+    assert exception.status == status
+    assert exception.category == "client"
+    assert exception.message == str(exception)
+    assert exception.args == (exception.message,)
+    assert "secret-marker" not in repr(exception)
 
 
-def test_yandex_error_defaults() -> None:
-    assert str(YandexClientException(503)) == "Yandex Client exception \nStatus code: 503"
+@pytest.mark.parametrize("category", ["client", "timeout", "transport", "http", "response", "secret-marker"])
+def test_yandex_error_safe_category(category: str) -> None:
+    exception = YandexClientException(None, category=category)
+    assert exception.category == ("client" if category == "secret-marker" else category)
+    assert "secret-marker" not in exception.message

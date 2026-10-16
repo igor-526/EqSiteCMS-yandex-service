@@ -2,6 +2,7 @@ from collections.abc import Mapping
 from typing import Any
 
 import httpx
+from pydantic import ValidationError
 
 from core.exceptions import YandexClientException
 from core.schemas.api import YandexMetricaCounterResponseOutDto
@@ -25,34 +26,50 @@ class YaMetricaServiceClient:
         auth: httpx.Auth | None = None,
         request_timeout: float | httpx.Timeout | None = 10.0,
     ) -> dict:
-        async with httpx.AsyncClient() as client:
-            response = await client.request(
-                method=method.upper(),
-                url=f"{self.ya_metrica_service_url}/api/{url}",
-                params=params,
-                headers=headers,
-                data=data,
-                json=json,
-                auth=auth,
-                timeout=request_timeout,
-            )
-        response_data = response.json()
-        if not isinstance(response_data, dict):
-            raise YandexClientException(status=response.status_code, error="Empty response")
-        if not 200 <= response.status_code < 300:
-            raise YandexClientException(
-                status=response.status_code,
-                error=response_data.get("error", None),
-                error_description=response_data.get("error_description", None),
-            )
-        return response_data
+        status = None
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.request(
+                    method=method.upper(),
+                    url=f"{self.ya_metrica_service_url}/api/{url}",
+                    params=params,
+                    headers=headers,
+                    data=data,
+                    json=json,
+                    auth=auth,
+                    timeout=request_timeout,
+                )
+                status = response.status_code
+            if not 200 <= status < 300:
+                raise YandexClientException(status, category="http")
+            response_data = response.json()
+            if not isinstance(response_data, dict):
+                raise ValueError("Expected a JSON object")
+            return response_data
+        except YandexClientException:
+            raise
+        except httpx.TimeoutException as ex:
+            raise YandexClientException(status, category="timeout") from ex
+        except httpx.TransportError as ex:
+            raise YandexClientException(status, category="transport") from ex
+        except (ValueError, TypeError) as ex:
+            raise YandexClientException(status, category="response") from ex
+        except Exception as ex:
+            raise YandexClientException(status) from ex
 
     async def get_metrica_counters(
         self, *, access_token: str, search: str | None = None, limit: int = 20, offset: int = 0
     ) -> YandexMetricaCounterResponseOutDto:
-        response = await self.make_request(
-            method="GET",
-            url="metrica/counters",
-            params={"access_token": access_token, "search": search, "limit": limit, "offset": offset},
-        )
-        return YandexMetricaCounterResponseOutDto.model_validate(response)
+        try:
+            response = await self.make_request(
+                method="GET",
+                url="metrica/counters",
+                params={"access_token": access_token, "search": search, "limit": limit, "offset": offset},
+            )
+            return YandexMetricaCounterResponseOutDto.model_validate(response)
+        except YandexClientException:
+            raise
+        except ValidationError as ex:
+            raise YandexClientException(None, category="response") from ex
+        except Exception as ex:
+            raise YandexClientException(None) from ex

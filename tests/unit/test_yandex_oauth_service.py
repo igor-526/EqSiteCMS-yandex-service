@@ -117,15 +117,47 @@ async def test_authentication_persists_encrypted_tokens_and_returns_safe_dto(
     "stage,message",
     [("authenticate", "Не удалось выполнить аутентификацию"), ("get_user_info", "Не удалось получить данные")],
 )
-async def test_provider_failures_map_to_client_error_before_writes(oauth, stage: str, message: str) -> None:
+@pytest.mark.parametrize("status,category", [(400, "http"), (None, "timeout"), (None, "response")])
+async def test_provider_failures_map_to_client_error_before_writes(
+    oauth,
+    stage: str,
+    message: str,
+    status: int | None,
+    category: str,
+    caplog: pytest.LogCaptureFixture,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     service, client, repository, _ = oauth
-    error = YandexClientException(status=400, error="invalid_grant")
+    marker = "SECRET-OAUTH-SERVICE-MARKER"
+    error = YandexClientException(status=status, category=category, error=marker, error_description=marker)
+    error.__cause__ = ValueError(marker)
     getattr(client, stage).side_effect = error
-    with pytest.raises(ClientError, match=message) as caught:
-        await service.authenticate(data=YandexAuthCodeInDto(code="code", equestrian_id=uuid4()))
+    with caplog.at_level(logging.DEBUG), pytest.raises(ClientError, match=message) as caught:
+        await service.authenticate(data=YandexAuthCodeInDto(code=marker, equestrian_id=uuid4()))
     assert caught.value.__cause__ is error
+    assert str(error.__cause__) == marker
+    assert marker not in str(caught.value)
+    assert marker not in repr(caught.value)
+    assert marker not in caplog.text
+    captured = capsys.readouterr()
+    assert marker not in captured.out + captured.err
+    assert all(record.exc_info is None for record in caplog.records)
+    getattr(client, stage).assert_awaited_once()
     if stage == "authenticate":
         client.get_user_info.assert_not_awaited()
+    repository.get_by_yandex_id.assert_not_awaited()
+    repository.create.assert_not_awaited()
+    repository.update.assert_not_awaited()
+
+
+@pytest.mark.parametrize("stage", ["authenticate", "get_user_info"])
+async def test_untyped_client_failure_is_not_mapped(oauth, stage: str) -> None:
+    service, client, repository, _ = oauth
+    error = RuntimeError("unexpected client bug")
+    getattr(client, stage).side_effect = error
+    with pytest.raises(RuntimeError) as caught:
+        await service.authenticate(data=YandexAuthCodeInDto(code="code", equestrian_id=uuid4()))
+    assert caught.value is error
     repository.get_by_yandex_id.assert_not_awaited()
     repository.create.assert_not_awaited()
     repository.update.assert_not_awaited()
@@ -149,6 +181,7 @@ async def test_repository_failures_map_to_app_error(oauth, stage: str) -> None:
     with pytest.raises(AppError, match="Не удалось сохранить аккаунт") as caught:
         await service.authenticate(data=YandexAuthCodeInDto(code="code", equestrian_id=uuid4()))
     assert caught.value.__cause__ is error
+    assert not isinstance(caught.value, ClientError)
     if stage == "get_by_yandex_id":
         repository.create.assert_not_awaited()
         repository.update.assert_not_awaited()

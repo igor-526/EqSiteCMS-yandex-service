@@ -78,11 +78,38 @@ async def test_repository_failure_propagates_before_client(metrica) -> None:
     client.get_metrica_counters.assert_not_awaited()
 
 
-async def test_provider_failure_propagates(metrica) -> None:
-    service, _, client, account = metrica
-    error = YandexClientException(status=503, error="unavailable")
+@pytest.mark.parametrize("status,category", [(503, "http"), (400, "http"), (None, "timeout"), (None, "response")])
+async def test_provider_failure_maps_to_safe_client_error(
+    metrica,
+    status: int | None,
+    category: str,
+    caplog: pytest.LogCaptureFixture,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    service, repository, client, account = metrica
+    marker = "SECRET-METRICA-SERVICE-MARKER"
+    error = YandexClientException(status=status, category=category, error=marker, error_description=marker)
+    error.__cause__ = ValueError(marker)
     client.get_metrica_counters.side_effect = error
-    with pytest.raises(YandexClientException) as caught:
+    with pytest.raises(ClientError, match="^Не удалось получить счётчики Яндекс Метрики$") as caught:
+        await service.get_counters(account_id=account.id)
+    assert caught.value.__cause__ is error
+    assert str(error.__cause__) == marker
+    assert marker not in str(caught.value)
+    assert marker not in repr(caught.value)
+    assert marker not in caplog.text
+    captured = capsys.readouterr()
+    assert marker not in captured.out + captured.err
+    client.get_metrica_counters.assert_awaited_once()
+    repository.create.assert_not_awaited()
+    repository.update.assert_not_awaited()
+
+
+async def test_untyped_client_failure_is_not_mapped(metrica) -> None:
+    service, _, client, account = metrica
+    error = RuntimeError("unexpected client bug")
+    client.get_metrica_counters.side_effect = error
+    with pytest.raises(RuntimeError) as caught:
         await service.get_counters(account_id=account.id)
     assert caught.value is error
 

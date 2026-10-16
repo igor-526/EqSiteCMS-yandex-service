@@ -35,13 +35,13 @@ class YandexOauthService:
         try:
             tokens = await self._client.authenticate(code=data.code)
         except YandexClientException as ex:
-            logger.warning("Yandex OAuth code exchange failed: %s", ex.message)
+            logger.warning("Yandex OAuth code exchange failed")
             raise ClientError("Не удалось выполнить аутентификацию в Яндекс") from ex
 
         try:
             user_info = await self._client.get_user_info(access_token=tokens.access_token)
         except YandexClientException as ex:
-            logger.warning("Failed to get Yandex user info: %s", ex.message)
+            logger.warning("Failed to get Yandex user info")
             raise ClientError("Не удалось получить данные аккаунта Яндекс") from ex
 
         try:
@@ -58,7 +58,7 @@ class YandexOauthService:
                 token_expires_at=self.get_token_expires_at(seconds=tokens.expires_in),
             )
         except (OverflowError, TypeError, ValueError) as ex:
-            logger.exception("Failed to prepare Yandex account data")
+            logger.error("Failed to prepare Yandex account data")
             raise AppError("Яндекс вернул некорректные данные аккаунта") from ex
 
         try:
@@ -90,7 +90,7 @@ class YandexOauthService:
                     data.equestrian_id,
                 )
         except RepositoryError as ex:
-            logger.exception(
+            logger.error(
                 "Failed to save Yandex account %s for equestrian %s",
                 user_info.id,
                 data.equestrian_id,

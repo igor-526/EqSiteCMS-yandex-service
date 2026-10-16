@@ -222,8 +222,8 @@ async def test_runtime_commit_failure_rolls_back_before_response(
         response = await client.request(
             method, url, json={"code": "abc", "equestrian_id": "11111111-1111-4111-8111-111111111111"}
         )
-    assert response.status_code == 500
-    runtime_api.assert_transaction(500, "rollback")
+    assert response.status_code == 400
+    runtime_api.assert_transaction(400, "rollback")
 
 
 async def test_runtime_concurrent_and_sequential_sessions(runtime_api: RuntimeApi) -> None:
@@ -247,7 +247,9 @@ async def test_runtime_concurrent_and_sequential_sessions(runtime_api: RuntimeAp
         third = await client.get(url)
     assert [response.status_code for response in [*responses, third]] == [200, 200, 200]
     assert len({id(session) for session in sessions}) == 3
-    assert sessions == runtime_api.sessions
+    # Concurrent handlers can reach the service in a different creation order.
+    assert {id(session) for session in sessions} == {id(session) for session in runtime_api.sessions}
+    assert sessions[-1] is runtime_api.sessions[-1]
     assert all(session.closed for session in runtime_api.sessions)
     assert runtime_api.events.count("response:200") == 3
     for session in runtime_api.sessions:

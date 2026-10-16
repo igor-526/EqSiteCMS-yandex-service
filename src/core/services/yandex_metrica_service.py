@@ -1,7 +1,7 @@
 import logging
 from uuid import UUID
 
-from core.exceptions import ClientError
+from core.exceptions import ClientError, YandexClientException
 from core.protocols.clients import YaMetricaServiceClientProtocol
 from core.protocols.repositories import YandexUserRepositoryProtocol
 from core.schemas.api import YandexMetricaCounterResponseOutDto
@@ -34,7 +34,10 @@ class YandexMetricaService:
         yandex_account = await self._yandex_user_repository.get_by_id(id=account_id)
         if yandex_account is None:
             raise ClientError("Аккаунт не найден")
-        counters = await self._yandex_metrica_client.get_metrica_counters(
-            access_token=yandex_account.enc_access_token, search=search, limit=limit, offset=offset
-        )
+        try:
+            counters = await self._yandex_metrica_client.get_metrica_counters(
+                access_token=yandex_account.enc_access_token, search=search, limit=limit, offset=offset
+            )
+        except YandexClientException as ex:
+            raise ClientError("Не удалось получить счётчики Яндекс Метрики") from ex
         return YandexMetricaCounterResponseOutDto.model_validate(counters)
