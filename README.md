@@ -94,3 +94,24 @@ Baseline harness (2026-10-14): 32 collected / 32 passed; combined coverage 71.37
 branches 12/66 (18.182%). Исходный TestClient зависает в ограниченном sandbox
 на AnyIO blocking portal; тот же suite вне sandbox проходит. Runtime-код для
 обхода этого ограничения не изменялся.
+
+## Внутренний peer-контракт Y5
+
+| ID | Метод | Путь | Access class | Роли | Без авторизации | С Cookie/Bearer |
+|---|---|---|---|---|---|---|
+| Y5 | GET | `/api/servicing/access-token/{account_id}` | Sensitive Private Peer Read exception | доверенный внутренний сервис ya-metrica | `200 {"enc_access_token": "<ciphertext>"}`; malformed/отсутствующий аккаунт → `400` | то же |
+
+Y5 возвращает сохранённый `enc_access_token` **без расшифровки**. Поле `access_token`
+и открытый OAuth-токен в ответе отсутствуют. Это breaking change внутреннего контракта;
+потребитель `ya-metrica-service` расшифровывает ciphertext общим `ENCRYPTION_SERVICE_KEY`.
+Cookie/Bearer не проверяются и не дают дополнительных прав: в доверенном peer-контуре
+валидный аккаунт другого tenant имеет тот же контракт, неизвестный — `400`.
+
+Ciphertext остаётся чувствительным: Y5 не является Public Read для сайтов/CMS.
+Исключение сохраняется только в согласованном dev-окружении; production deployment
+блокируется без подтверждённой защиты чувствительных peer APIs от внешних anonymous
+callers. Этот change не добавляет сервисную аутентификацию и не доказывает сетевую изоляцию.
+
+Регрессия: `UT-YS-01..04` в `tests/unit/test_service_authorization.py` и
+`tests/api/test_servicing.py` (ciphertext, отсутствие decrypt/plaintext, безопасные ошибки,
+anonymous/Cookie/Bearer, чужой tenant).

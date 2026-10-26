@@ -12,7 +12,11 @@ from utils.transactional_route import TransactionalRoute
 router = APIRouter(route_class=TransactionalRoute)
 
 
-@router.get("/access-token/{account_id}", response_model=ServiceAuthorizationAccessTokenOutDto)
+@router.get(
+    "/access-token/{account_id}",
+    response_model=ServiceAuthorizationAccessTokenOutDto,
+    description="Выдача сохранённого ciphertext токена доверенному сервису ya-metrica без расшифровки.",
+)
 @inject
 async def get_account_access_token(
     service: Annotated[
@@ -21,5 +25,5 @@ async def get_account_access_token(
     ],
     account_id: UUID,
 ) -> ServiceAuthorizationAccessTokenOutDto:
-    access_token = await service.get_token(account_id=account_id)
-    return ServiceAuthorizationAccessTokenOutDto(access_token=access_token)
+    enc_access_token = await service.get_token(account_id=account_id)
+    return ServiceAuthorizationAccessTokenOutDto(enc_access_token=enc_access_token)

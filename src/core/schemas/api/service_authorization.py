@@ -4,6 +4,6 @@ from core.schemas.baseschema import BaseSchema
 
 
 class ServiceAuthorizationAccessTokenOutDto(BaseSchema):
-    """DTO выдачи access токена для авторизации пользователя в других сервисах."""
+    """DTO выдачи зашифрованного access токена доверенному сервису ya-metrica."""
 
-    access_token: str = Field(..., description="Access токен пользователя Яндекс")
+    enc_access_token: str = Field(..., description="Сохранённый зашифрованный access токен пользователя Яндекс")

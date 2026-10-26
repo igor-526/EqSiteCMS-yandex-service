@@ -80,7 +80,9 @@ def test_auth_uuid_parsing_and_unconstrained_empty_code() -> None:
     assert dto.equestrian_id == tenant
     assert dto.code == ""
     assert YandexAuthLinkOutDto(auth_link="https://example.test").model_dump() == {"auth_link": "https://example.test"}
-    assert ServiceAuthorizationAccessTokenOutDto(access_token="token").model_dump() == {"access_token": "token"}
+    assert ServiceAuthorizationAccessTokenOutDto(enc_access_token="ciphertext").model_dump() == {
+        "enc_access_token": "ciphertext"
+    }
 
 
 @pytest.mark.parametrize(

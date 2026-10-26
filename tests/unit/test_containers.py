@@ -56,7 +56,8 @@ def test_settings_singletons_and_real_provider_graph() -> None:
         for service in (oauth, accounts, authorization, metrica):
             assert isinstance(service._yandex_user_repository, YandexUserRepository)
             assert service._yandex_user_repository.session is session
-        for service in (oauth, authorization, metrica):
+        assert not hasattr(authorization, "_encryption_service")
+        for service in (oauth, metrica):
             assert isinstance(service._encryption_service, EncryptionService)
             ciphertext = service._encryption_service.encrypt(data="provider graph token")
             assert services.encryption_service().decrypt(data=ciphertext) == "provider graph token"

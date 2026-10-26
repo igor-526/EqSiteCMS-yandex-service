@@ -29,7 +29,6 @@ class ServicesContainer(containers.DeclarativeContainer):
     )
     yandex_service_authorization_service = providers.Factory(
         YandexServiceAuthorizationService,
-        encryption_service=encryption_service,
         yandex_user_repository=repositories_container.yandex_user_repository,
     )
     ya_metrica_service = providers.Factory(
