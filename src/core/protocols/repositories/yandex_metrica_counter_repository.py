@@ -12,3 +12,7 @@ class YandexMetricaCounterRepositoryProtocol(BaseRepositoryProtocol[YandexMetric
     """
     Получение счётчика конюшни
     """
+
+    async def list_paginated(self, *, limit: int, offset: int) -> list[YandexMetricaCounter]: ...
+
+    async def count(self) -> int: ...

@@ -8,6 +8,8 @@ from core.exceptions import ClientError
 from core.protocols.repositories import YandexMetricaCounterRepositoryProtocol, YandexUserRepositoryProtocol
 from core.schemas.api import (
     YandexAccountOutDto,
+    YandexMetricaBindingItemOutDto,
+    YandexMetricaBindingListOutDto,
     YandexMetricaConnectedCounterOutDto,
     YandexMetricaSetCounterInDto,
     YandexMetricaSetCounterOutDto,
@@ -24,6 +26,19 @@ class YandexMetricaCounterService:
     ) -> None:
         self.yandex_metrica_counter_repository = yandex_metrica_counter_repository
         self._yandex_user_repository = yandex_user_repository
+
+    async def list_bindings(self, *, limit: int = 100, offset: int = 0) -> YandexMetricaBindingListOutDto:
+        if not 1 <= limit <= 500 or offset < 0:
+            raise ClientError("Некорректные параметры пагинации")
+        counters = await self.yandex_metrica_counter_repository.list_paginated(limit=limit, offset=offset)
+        total = await self.yandex_metrica_counter_repository.count()
+        return YandexMetricaBindingListOutDto(
+            total=total,
+            items=[
+                YandexMetricaBindingItemOutDto(equestrian_id=counter.equestrian_id, counter_id=counter.counter_id)
+                for counter in counters
+            ],
+        )
 
     async def get_counter(self, *, equestrian_id: UUID) -> YandexMetricaConnectedCounterOutDto:
         counter = await self.yandex_metrica_counter_repository.get_by_equestrian(equestrian_id=equestrian_id)

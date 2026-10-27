@@ -115,3 +115,36 @@ callers. Этот change не добавляет сервисную аутент
 Регрессия: `UT-YS-01..04` в `tests/unit/test_service_authorization.py` и
 `tests/api/test_servicing.py` (ciphertext, отсутствие decrypt/plaintext, безопасные ошибки,
 anonymous/Cookie/Bearer, чужой tenant).
+
+## Список привязок Метрики (Y10)
+
+`GET /api/connections/metrica?limit=100&offset=0` возвращает внутренний реестр
+привязок для ежедневного расписания seo-service. `limit` — 1..500 (по умолчанию
+100), `offset` — целое ≥0 (по умолчанию 0). Сортировка стабильная по
+`equestrian_id`, `total` — количество всех привязок независимо от страницы.
+
+```json
+{"total": 1, "items": [{"equestrian_id": "22222222-2222-4222-8222-222222222222", "counter_id": "42"}]}
+```
+
+Нет привязок → `{"total": 0, "items": []}`; offset за пределами списка → пустые
+`items` с общим `total`. Каждый элемент содержит ровно два поля: `equestrian_id`
+(UUID) и `counter_id` (строка), без токенов и данных аккаунта. Невалидные или
+нечисловые параметры пагинации → `400` без отражения входных значений.
+Существующий `GET /api/connections/metrica/{equestrian_id}` не меняется.
+
+| ID | Метод | Путь | Access class | Роли | Без авторизации | С Cookie/Bearer |
+|---|---|---|---|---|---|---|
+| Y10 | GET | `/api/connections/metrica` | Private Peer Read exception | доверенный внутренний caller (seo-service scheduler) | `200 {total, items}`; invalid `limit`/`offset` → `400` | то же; Cookie/Authorization игнорируются |
+
+Причина исключения из Public Read: это внутренний операционный реестр, не API
+публичных `site-*`. Контракт credential-less: peer credentials не добавляются,
+пользовательские cookie/Bearer не дают прав. Сохраняется dev-допущение Q2;
+production deployment/release блокируется до подтверждения защиты чувствительных
+peer APIs от внешних anonymous callers. Этот endpoint не доказывает production
+изоляцию и не меняет существующие auth/network boundaries.
+
+Проверки: `UT-YB-01` — `tests/api/test_yandex_connections.py`; `IT-YB-01` —
+`tests/integration/test_counter_repository_postgres.py`. Для последней нужен
+`TEST_DATABASE_URL` (`postgresql+asyncpg://...`): fixture создаёт уникальную
+тестовую схему и удаляет только её, не затрагивая существующие данные.

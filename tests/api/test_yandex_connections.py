@@ -122,3 +122,81 @@ async def test_connection_validation(runtime_api, headers, method, path, body):
     assert "SECRET-input" not in response.text
     assert repository.mock_calls == users.mock_calls == []
     runtime_api.assert_transaction(400, "rollback")
+
+
+@pytest.mark.parametrize("headers", AUTH_HEADERS)
+@pytest.mark.parametrize("query,limit,offset", [("", 100, 0), ("?limit=1&offset=3", 1, 3), ("?limit=500", 500, 0)])
+@pytest.mark.parametrize("found", [False, True])
+async def test_list_bindings_y10_contract(runtime_api, headers, query, limit, offset, found):
+    """UT-YB-01: credential-less Y10 exposes identifiers, never account data."""
+    user = account()
+    counter = YandexMetricaCounter(equestrian_id=user.equestrian_id, yandex_user_id=user.id, counter_id="42")
+    repository = AsyncMock(spec=YandexMetricaCounterRepositoryProtocol)
+    repository.list_paginated.return_value = [counter] if found else []
+    repository.count.return_value = 250 if found else 0
+    users = AsyncMock(spec=YandexUserRepositoryProtocol)
+    service = YandexMetricaCounterService(repository, users)
+    services_container.wire(modules=[yandex_connections])
+    with override_providers({services_container.yandex_metrica_counter_service: service}):
+        async with runtime_api.client() as client:
+            response = await client.get(f"/api/connections/metrica{query}", headers=headers)
+    assert response.status_code == 200
+    assert response.json() == {
+        "total": 250 if found else 0,
+        "items": [{"equestrian_id": str(user.equestrian_id), "counter_id": "42"}] if found else [],
+    }
+    repository.list_paginated.assert_awaited_once_with(limit=limit, offset=offset)
+    repository.count.assert_awaited_once_with()
+    assert len(repository.mock_calls) == 2
+    assert users.mock_calls == []
+    runtime_api.assert_transaction(200, "commit")
+
+
+@pytest.mark.parametrize("headers", AUTH_HEADERS)
+@pytest.mark.parametrize(
+    "query",
+    [
+        "limit=0",
+        "limit=-1",
+        "limit=501",
+        "offset=-1",
+        "limit=SECRET-input",
+        "offset=SECRET-input",
+        "limit=1.5",
+        "offset=1.5",
+        "limit=",
+        "offset=",
+    ],
+)
+async def test_list_bindings_y10_validation(runtime_api, headers, query):
+    """UT-YB-01: all invalid pagination yields safe 400 before repository calls."""
+    repository = AsyncMock(spec=YandexMetricaCounterRepositoryProtocol)
+    users = AsyncMock(spec=YandexUserRepositoryProtocol)
+    service = YandexMetricaCounterService(repository, users)
+    services_container.wire(modules=[yandex_connections])
+    with override_providers({services_container.yandex_metrica_counter_service: service}):
+        async with runtime_api.client() as client:
+            response = await client.get(f"/api/connections/metrica?{query}", headers=headers)
+    assert response.status_code == 400
+    assert "SECRET-input" not in response.text
+    assert repository.mock_calls == users.mock_calls == []
+    runtime_api.assert_transaction(400, "rollback")
+
+
+def test_list_bindings_openapi_contract():
+    from main import app
+
+    schema = app.openapi()
+    operation = schema["paths"]["/api/connections/metrica"]["get"]
+    assert operation["responses"]["200"]["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/YandexMetricaBindingListOutDto"
+    }
+    params = {param["name"]: param for param in operation["parameters"]}
+    assert params["limit"]["schema"]["default"] == 100
+    assert params["offset"]["schema"]["default"] == 0
+    assert set(schema["components"]["schemas"]["YandexMetricaBindingItemOutDto"]["properties"]) == {
+        "equestrian_id",
+        "counter_id",
+    }
+    assert "get" in schema["paths"]["/api/connections/metrica/{equestrian_id}"]
+    assert not operation.get("security")

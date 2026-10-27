@@ -2,10 +2,11 @@ from typing import Annotated
 from uuid import UUID
 
 from dependency_injector.wiring import Provide, inject
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 
 from containers.services import ServicesContainer
 from core.schemas.api import (
+    YandexMetricaBindingListOutDto,
     YandexMetricaConnectedCounterOutDto,
     YandexMetricaSetCounterInDto,
     YandexMetricaSetCounterOutDto,
@@ -14,6 +15,18 @@ from core.services import YandexMetricaCounterService
 from utils.transactional_route import TransactionalRoute
 
 router = APIRouter(route_class=TransactionalRoute)
+
+
+@router.get("/metrica", response_model=YandexMetricaBindingListOutDto)
+@inject
+async def list_bindings(
+    service: Annotated[
+        YandexMetricaCounterService, Depends(Provide[ServicesContainer.yandex_metrica_counter_service])
+    ],
+    limit: Annotated[int, Query(description="Количество привязок (1..500)")] = 100,
+    offset: Annotated[int, Query(description="Смещение (не меньше 0)")] = 0,
+) -> YandexMetricaBindingListOutDto:
+    return await service.list_bindings(limit=limit, offset=offset)
 
 
 @router.get("/metrica/{equestrian_id}", response_model=YandexMetricaConnectedCounterOutDto)

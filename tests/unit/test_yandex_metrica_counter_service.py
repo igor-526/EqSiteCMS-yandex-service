@@ -146,3 +146,26 @@ async def test_repository_errors_propagate(counters, method):
         else:
             await service.delete_counter(counter_id=counter.id)
     assert caught.value is error
+
+
+async def test_list_bindings_uses_two_repository_calls_without_account_lookups(counters):
+    service, repository, users, counter, _ = counters
+    repository.list_paginated.return_value = [counter]
+    repository.count.return_value = 250
+    result = await service.list_bindings(limit=100, offset=100)
+    assert result.model_dump() == {
+        "total": 250,
+        "items": [{"equestrian_id": counter.equestrian_id, "counter_id": counter.counter_id}],
+    }
+    repository.list_paginated.assert_awaited_once_with(limit=100, offset=100)
+    repository.count.assert_awaited_once_with()
+    assert len(repository.mock_calls) == 2
+    assert users.mock_calls == []
+
+
+@pytest.mark.parametrize("limit,offset", [(0, 0), (501, 0), (1, -1)])
+async def test_list_bindings_invalid_pagination(counters, limit, offset):
+    service, repository, users, _, _ = counters
+    with pytest.raises(ClientError):
+        await service.list_bindings(limit=limit, offset=offset)
+    assert repository.mock_calls == users.mock_calls == []

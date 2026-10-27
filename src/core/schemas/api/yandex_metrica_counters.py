@@ -41,3 +41,17 @@ class YandexMetricaConnectedCounterOutDto(BaseSchema):
     """Ответ на запрос счётчика"""
 
     counter: YandexMetricaSetCounterOutDto | None = Field(default=None, description="Счётчик метрики")
+
+
+class YandexMetricaBindingItemOutDto(BaseSchema):
+    """Привязка без токенов и данных аккаунта."""
+
+    equestrian_id: UUID = Field(description="UUID конюшни")
+    counter_id: str = Field(description="Счётчик Яндекс.Метрика")
+
+
+class YandexMetricaBindingListOutDto(BaseSchema):
+    """Страница внутреннего реестра привязок."""
+
+    total: int = Field(description="Общее количество привязок")
+    items: list[YandexMetricaBindingItemOutDto] = Field(default_factory=list)
