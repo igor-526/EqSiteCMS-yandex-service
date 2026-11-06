@@ -3,6 +3,7 @@ from uuid import UUID
 
 from core.entities import PaginatedEntities
 from core.protocols.repositories import YandexUserRepositoryProtocol
+from core.protocols.repositories.metrica_lifecycle_repository import MetricaLifecycleRepositoryProtocol
 from core.schemas.api import YandexAccountOutDto
 
 logger = logging.getLogger("Yandex Accounts Service")
@@ -12,7 +13,9 @@ class YandexAccountsService:
     def __init__(
         self,
         yandex_user_repository: YandexUserRepositoryProtocol,
+        metrica_lifecycle_repository: MetricaLifecycleRepositoryProtocol,
     ) -> None:
+        self._lifecycle = metrica_lifecycle_repository
         self._yandex_user_repository = yandex_user_repository
 
     async def list_filtered(
@@ -37,5 +40,5 @@ class YandexAccountsService:
         )
 
     async def delete_account(self, *, account_id: UUID) -> None:
-        await self._yandex_user_repository.delete(id=account_id)
+        await self._lifecycle.delete_account(account_id=account_id)
         logger.info("Deleted Yandex account %s", account_id)

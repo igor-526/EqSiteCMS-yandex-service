@@ -6,8 +6,10 @@ import pytest
 from pydantic import ValidationError
 
 from core.entities import YandexMetricaCounter
+from core.entities.metrica_lifecycle import MetricaBindingSnapshot, MetricaTenantLifecycle
 from core.exceptions import ClientError, RepositoryError
 from core.protocols.repositories import YandexMetricaCounterRepositoryProtocol, YandexUserRepositoryProtocol
+from core.protocols.repositories.metrica_lifecycle_repository import MetricaLifecycleRepositoryProtocol
 from core.schemas.api import YandexAccountOutDto, YandexMetricaSetCounterInDto
 from core.services.yandex_metrica_counter_service import YandexMetricaCounterService
 from tests.unit.test_yandex_user_repository import account
@@ -27,9 +29,17 @@ def counters():
     counter = YandexMetricaCounter(equestrian_id=user.equestrian_id, yandex_user_id=user.id, counter_id="42")
     repository = AsyncMock(spec=YandexMetricaCounterRepositoryProtocol)
     repository.get_by_equestrian.return_value = counter
+    lifecycle = AsyncMock(spec=MetricaLifecycleRepositoryProtocol)
+    lifecycle.get_binding_snapshot.return_value = MetricaBindingSnapshot(
+        lifecycle=MetricaTenantLifecycle(
+            equestrian_id=user.equestrian_id, binding_generation=3, cleanup_requested_seq=2, cleanup_completed_seq=1
+        ),
+        counter=counter,
+    )
+    lifecycle.set_binding.side_effect = lambda *, counter: counter
     users = AsyncMock(spec=YandexUserRepositoryProtocol)
     users.get_by_id.return_value = user
-    return YandexMetricaCounterService(repository, users), repository, users, counter, user
+    return YandexMetricaCounterService(repository, users, lifecycle), repository, users, counter, user
 
 
 async def test_get_counter_includes_public_account(counters):
@@ -42,16 +52,22 @@ async def test_get_counter_includes_public_account(counters):
     assert result.counter_id == counter.counter_id
     assert result.yandex_account == YandexAccountOutDto.model_validate(user)
     assert "enc_access_token" not in result.yandex_account.model_dump()
-    repository.get_by_equestrian.assert_awaited_once_with(equestrian_id=counter.equestrian_id)
+    service._lifecycle.get_binding_snapshot.assert_awaited_once_with(equestrian_id=counter.equestrian_id)
+    repository.get_by_equestrian.assert_not_awaited()
     users.get_by_id.assert_awaited_once_with(id=counter.yandex_user_id)
 
 
 async def test_get_missing_counter(counters):
     service, repository, users, counter, _ = counters
-    repository.get_by_equestrian.return_value = None
+    service._lifecycle.get_binding_snapshot.return_value.counter = None
     result = await service.get_counter(equestrian_id=counter.equestrian_id)
     assert result.counter is None
-    assert result.model_dump() == {"counter": None}
+    assert result.model_dump() == {
+        "counter": None,
+        "binding_generation": 3,
+        "cleanup_requested_seq": 2,
+        "cleanup_completed_seq": 1,
+    }
     users.get_by_id.assert_not_awaited()
 
 
@@ -87,24 +103,14 @@ async def test_set_counter_is_idempotent(counters, mode, caplog):
     assert result.yandex_account.id == user.id
     users.get_by_id.assert_awaited_once_with(id=data.yandex_account_id)
     assert "Set Yandex Metrica counter" in caplog.text
-    if mode == "create":
-        repository.create.assert_awaited_once()
-        saved = repository.create.await_args.args[0]
-        assert result.id == saved.id
-        repository.update.assert_not_awaited()
-    elif mode == "same":
-        repository.create.assert_not_awaited()
-        repository.update.assert_not_awaited()
-        assert result.id == counter.id
-    else:
-        repository.create.assert_not_awaited()
-        repository.update.assert_awaited_once()
-        saved = repository.update.await_args.args[0]
-        assert saved.id == counter.id
-        assert saved.created_at == counter.created_at
-        assert saved.counter_id == data.counter_id
-        assert saved.yandex_user_id == data.yandex_account_id
-        assert counter.counter_id == "42"
+    repository.get_by_equestrian.assert_not_awaited()
+    service._lifecycle.set_binding.assert_awaited_once()
+    saved = service._lifecycle.set_binding.await_args.kwargs["counter"]
+    assert saved.counter_id == data.counter_id
+    assert saved.yandex_user_id == data.yandex_account_id
+    assert result.id == saved.id
+    repository.create.assert_not_awaited()
+    repository.update.assert_not_awaited()
 
 
 @pytest.mark.parametrize("exists", [False, True])
@@ -123,12 +129,12 @@ async def test_set_invalid_counter_converts_validation_error(counters, exists):
 
 async def test_delete_counter_is_idempotent(counters, caplog):
     service, repository, _, counter, _ = counters
-    repository.delete.return_value = None
+    service._lifecycle.delete_binding.return_value = None
     with caplog.at_level(logging.INFO):
         assert await service.delete_counter(counter_id=counter.id) is None
         assert await service.delete_counter(counter_id=counter.id) is None
-    assert repository.delete.await_count == 2
-    repository.delete.assert_awaited_with(id=counter.id)
+    assert service._lifecycle.delete_binding.await_count == 2
+    service._lifecycle.delete_binding.assert_awaited_with(counter_id=counter.id)
     assert "Deleted Yandex Metrica counter" in caplog.text
 
 
@@ -136,8 +142,9 @@ async def test_delete_counter_is_idempotent(counters, caplog):
 async def test_repository_errors_propagate(counters, method):
     service, repository, _, counter, _ = counters
     error = RepositoryError("database unavailable")
-    repository.get_by_equestrian.side_effect = error
-    repository.delete.side_effect = error
+    service._lifecycle.get_binding_snapshot.side_effect = error
+    service._lifecycle.delete_binding.side_effect = error
+    service._lifecycle.set_binding.side_effect = error
     with pytest.raises(RepositoryError) as caught:
         if method == "get":
             await service.get_counter(equestrian_id=counter.equestrian_id)

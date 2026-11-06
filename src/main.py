@@ -1,5 +1,6 @@
+import asyncio
 import logging
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 
 from fastapi import APIRouter, FastAPI, Request
 from fastapi.exceptions import RequestValidationError, ResponseValidationError
@@ -19,7 +20,7 @@ from api import (
     yandex_metrica,
     yandex_metrica_router,
 )
-from containers import services_container
+from containers import container, services_container
 from core.exceptions import AppError
 from settings import settings
 from utils.configure_logger import configure_logger
@@ -32,8 +33,28 @@ configure_sentry()
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    yield
-    await close_database()
+    client = container.nats_client()
+    consumer = container.cleanup_completed_consumer()
+    relay_task: asyncio.Task[None] | None = None
+    try:
+        await client.start()
+        await consumer.start()
+        relay_task = asyncio.create_task(container.cleanup_outbox_relay().run(), name="cleanup-outbox-relay")
+        yield
+    finally:
+        try:
+            try:
+                await consumer.stop()
+            finally:
+                if relay_task is not None:
+                    relay_task.cancel()
+                    with suppress(asyncio.CancelledError):
+                        await relay_task
+        finally:
+            try:
+                await client.close()
+            finally:
+                await close_database()
 
 
 services_container.wire(
@@ -75,7 +96,6 @@ class SafeHttpErrorBoundary:
 app = FastAPI(title=settings.app_title, debug=False, lifespan=lifespan, redirect_slashes=False)
 app.add_middleware(SafeHttpErrorBoundary)
 logger = logging.getLogger(__name__)
-app.state.container = services_container
 
 router = APIRouter(prefix="/api")
 router.include_router(yandex_auth_router, prefix="/auth", tags=["Yandex Auth"])

@@ -1,0 +1,172 @@
+asyncapi: '2.6.0'
+info:
+  title: Yandex maintenance lifecycle
+  version: '1.0.0'
+  description: >-
+    Internal Trusted Network Write. Production network isolation is mandatory.
+    No OAuth tokens, logins, codes or PII. HTTP access policy is unchanged.
+defaultContentType: application/json
+servers:
+  internal:
+    url: nats:4222
+    protocol: nats
+    description: Internal JetStream; runtime address comes from NATS_SERVERS.
+x-streams:
+  YANDEX_LIFECYCLE:
+    owner: yandex-service
+    subjects: [events.yandex.metrica.cleanup.requested]
+    storage: file
+    retention: limits
+    max_age: 0
+    max_msgs: -1
+    max_bytes: -1
+    discard: new
+    duplicate_window_seconds: 120
+  METRICA_MAINTENANCE_RESULTS:
+    owner: ya-metrica-service
+    subjects: [events.metrica.cleanup.completed, events.metrica.pages.merge.completed]
+    storage: file
+    retention: limits
+    max_age: 0
+    max_msgs: -1
+    max_bytes: -1
+    discard: new
+    duplicate_window_seconds: 120
+x-message-identity: >-
+  message_id = Nats-Msg-Id = uuid5(NAMESPACE_URL,
+  "eqcms:maintenance:v1:<subject>:<operation_id>:<kind>").
+  kind=requested for cleanup requested; kind=completed for cleanup completed.
+  ID and full envelope are persisted once in producer outbox. PubAck.duplicate
+  is warning and successful delivery. Replay after duplicate window is handled by inbox.
+x-recovery: >-
+  Publish outside DB transaction, mark published only after PubAck. Claim has a
+  fenced token and lease; pending/expired claims are retried after restart.
+  Retry 1..60 seconds indefinitely; escalation after 5 failures. Never delete
+  pending intentions. Broker storage loss requires operator ledger recovery.
+channels:
+  events.yandex.metrica.cleanup.requested:
+    x-stream: YANDEX_LIFECYCLE
+    x-owner: yandex-service
+    x-consumers:
+      - service: ya-metrica-service
+        durable: ya-metrica-cleanup-requested
+        filter_subject: events.yandex.metrica.cleanup.requested
+        mode: pull
+        deliver_policy: all
+        ack_policy: explicit
+        ack_wait_seconds: 30
+        max_deliver: -1
+    publish:
+      operationId: publishCleanupRequested
+      summary: Binding deletion and durable intention commit atomically.
+      message:
+        $ref: '#/components/messages/CleanupRequested'
+  events.metrica.cleanup.completed:
+    x-stream: METRICA_MAINTENANCE_RESULTS
+    x-owner: ya-metrica-service
+    x-consumers:
+      - service: yandex-service
+        durable: yandex-metrica-cleanup-completed
+        filter_subject: events.metrica.cleanup.completed
+        mode: pull
+        deliver_policy: all
+        ack_policy: explicit
+        ack_wait_seconds: 30
+        max_deliver: -1
+    subscribe:
+      operationId: consumeCleanupCompleted
+      description: >-
+        Lifespan-scoped consumer. Lookup foreign stream only;
+        retry 10 attempts, linear backoff 2 seconds. Incompatible config fails
+        fast. Inbox consumer/message_id plus payload hash commits with own
+        ledger-prefix advancement before ACK. Unknown/foreign operation or seq
+        never clears a barrier. Invalid schema/correlation is term; transient
+        DB/integration failure is nak with exponential 1..60 second delay,
+        escalation after 5 failures. No cleanup batches in the handler.
+      message:
+        $ref: '#/components/messages/CleanupCompleted'
+components:
+  messages:
+    CleanupRequested:
+      name: CleanupRequested
+      contentType: application/json
+      headers:
+        $ref: '#/components/schemas/Headers'
+      payload:
+        $ref: '#/components/schemas/CleanupRequested'
+    CleanupCompleted:
+      name: CleanupCompleted
+      contentType: application/json
+      headers:
+        $ref: '#/components/schemas/Headers'
+      payload:
+        $ref: '#/components/schemas/CleanupCompleted'
+  schemas:
+    Headers:
+      type: object
+      required: [Nats-Msg-Id]
+      properties:
+        Nats-Msg-Id:
+          type: string
+          format: uuid
+          description: Must equal payload.message_id and deterministic subject/operation/kind ID.
+    CleanupRequested:
+      type: object
+      additionalProperties: false
+      required: [schema_version, message_id, operation_id, equestrian_id, occurred_at, cleanup_seq, binding_generation, reason]
+      properties:
+        schema_version:
+          type: integer
+          const: 1
+        message_id:
+          type: string
+          format: uuid
+        operation_id:
+          type: string
+          format: uuid
+        equestrian_id:
+          type: string
+          format: uuid
+        occurred_at:
+          type: string
+          format: date-time
+          description: UTC RFC3339
+        cleanup_seq:
+          type: integer
+          minimum: 1
+          maximum: 9223372036854775807
+        binding_generation:
+          type: integer
+          minimum: 0
+          maximum: 9223372036854775807
+        reason:
+          type: string
+          enum: [counter_unlinked, account_deleted]
+    CleanupCompleted:
+      type: object
+      additionalProperties: false
+      required: [schema_version, message_id, operation_id, equestrian_id, occurred_at, cleanup_seq, status]
+      properties:
+        schema_version:
+          type: integer
+          const: 1
+        message_id:
+          type: string
+          format: uuid
+        operation_id:
+          type: string
+          format: uuid
+        equestrian_id:
+          type: string
+          format: uuid
+        occurred_at:
+          type: string
+          format: date-time
+          description: UTC RFC3339
+        cleanup_seq:
+          type: integer
+          minimum: 1
+          maximum: 9223372036854775807
+        status:
+          type: string
+          enum: [completed]

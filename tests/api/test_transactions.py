@@ -16,6 +16,7 @@ from api import servicing, yandex_accounts, yandex_auth, yandex_metrica
 from containers.repositories import RepositoriesContainer
 from containers.services import ServicesContainer
 from core.exceptions import AppError, ClientError
+from core.protocols.repositories.metrica_lifecycle_repository import MetricaLifecycleRepositoryProtocol
 from core.services import YandexAccountsService
 from depends import utils as session_dependencies
 from repositories import YandexUserRepository
@@ -54,8 +55,15 @@ class FakeSession:
 
 
 class FakeService(YandexAccountsService):
-    def __init__(self, yandex_user_repository: YandexUserRepository) -> None:
-        super().__init__(yandex_user_repository=yandex_user_repository)
+    def __init__(
+        self,
+        yandex_user_repository: YandexUserRepository,
+        metrica_lifecycle_repository: MetricaLifecycleRepositoryProtocol,
+    ) -> None:
+        super().__init__(
+            yandex_user_repository=yandex_user_repository,
+            metrica_lifecycle_repository=metrica_lifecycle_repository,
+        )
         self.repository = yandex_user_repository
 
 

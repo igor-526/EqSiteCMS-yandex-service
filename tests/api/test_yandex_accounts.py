@@ -7,6 +7,7 @@ import pytest
 
 from containers import services_container
 from core.protocols.repositories import YandexUserRepositoryProtocol
+from core.protocols.repositories.metrica_lifecycle_repository import MetricaLifecycleRepositoryProtocol
 from core.services import YandexAccountsService
 from tests.api.conftest import ACCOUNT, ACCOUNT_ID, AUTH_HEADERS, TENANT_ID, RuntimeApi
 from tests.helpers import override_providers
@@ -68,11 +69,12 @@ async def test_delete_is_currently_public_and_has_no_tenant_selector(
 
 @pytest.mark.parametrize("headers", AUTH_HEADERS)
 async def test_foreign_selector_and_absent_delete(runtime_api: RuntimeApi, headers: dict[str, str]) -> None:
+    lifecycle = AsyncMock(spec=MetricaLifecycleRepositoryProtocol)
     repository = AsyncMock(spec=YandexUserRepositoryProtocol)
     foreign = account()
     repository.get_filtered.return_value = [foreign]
     repository.count_filtered.return_value = 1
-    service = YandexAccountsService(yandex_user_repository=repository)
+    service = YandexAccountsService(yandex_user_repository=repository, metrica_lifecycle_repository=lifecycle)
     absent = uuid4()
     with override_providers({services_container.yandex_accounts_service: service}):
         async with runtime_api.client() as client:
@@ -88,8 +90,8 @@ async def test_foreign_selector_and_absent_delete(runtime_api: RuntimeApi, heade
     repository.get_filtered.assert_awaited_once_with(
         equestrian_id=foreign.equestrian_id, search=None, limit=20, offset=0
     )
-    assert repository.delete.await_count == 2
-    repository.delete.assert_awaited_with(id=absent)
+    assert lifecycle.delete_account.await_count == 2
+    lifecycle.delete_account.assert_awaited_with(account_id=absent)
     assert runtime_api.events.count("response:204") == 2
 
 

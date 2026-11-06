@@ -38,7 +38,11 @@ class YandexMetricaSetCounterOutDto(BaseSchema):
 
 
 class YandexMetricaConnectedCounterOutDto(BaseSchema):
-    """Ответ на запрос счётчика"""
+    """Private peer snapshot; lifecycle is not part of the CMS gateway DTO."""
+
+    binding_generation: int = Field(ge=0, description="Поколение привязки")
+    cleanup_requested_seq: int = Field(ge=0, description="Последняя запрошенная очистка")
+    cleanup_completed_seq: int = Field(ge=0, description="Непрерывный завершённый префикс очисток")
 
     counter: YandexMetricaSetCounterOutDto | None = Field(default=None, description="Счётчик метрики")
 

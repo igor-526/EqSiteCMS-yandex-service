@@ -57,3 +57,30 @@ class YandexMetricaServiceSettings(BaseSettings):
 
 
 settings = Settings()
+
+
+class NatsSettings(BaseSettings):
+    """Maintenance transport knobs; topology stays fixed by the approved contract."""
+
+    nats_servers_raw: str = Field(default="nats://localhost:4222", alias="NATS_SERVERS")
+    nats_setup_max_attempts: int = Field(default=10, alias="NATS_SETUP_MAX_ATTEMPTS", ge=1)
+    nats_setup_backoff_seconds: float = Field(default=2, alias="NATS_SETUP_BACKOFF_SECONDS", ge=0)
+    nats_connect_timeout_seconds: float = Field(default=5, alias="NATS_CONNECT_TIMEOUT_SECONDS", gt=0)
+    nats_publish_timeout_seconds: float = Field(default=5, alias="NATS_PUBLISH_TIMEOUT_SECONDS", gt=0)
+    nats_relay_poll_seconds: float = Field(default=1, alias="NATS_RELAY_POLL_SECONDS", gt=0)
+    nats_relay_claim_seconds: float = Field(default=30, alias="NATS_RELAY_CLAIM_SECONDS", gt=0)
+    nats_error_report_after_attempts: int = Field(default=5, alias="NATS_ERROR_REPORT_AFTER_ATTEMPTS", ge=1)
+
+    model_config = SettingsConfigDict(env_file=ENV_FILE, env_file_encoding="utf-8", extra="ignore")
+
+    @property
+    def nats_servers(self) -> list[str]:
+        return [server.strip() for server in self.nats_servers_raw.split(",") if server.strip()]
+
+    @model_validator(mode="after")
+    def validate_transport(self) -> NatsSettings:
+        if not self.nats_servers:
+            raise ValueError("NATS_SERVERS must not be empty")
+        if self.nats_relay_claim_seconds <= self.nats_publish_timeout_seconds:
+            raise ValueError("NATS_RELAY_CLAIM_SECONDS must exceed publish timeout")
+        return self

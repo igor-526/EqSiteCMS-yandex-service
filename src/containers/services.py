@@ -25,7 +25,9 @@ class ServicesContainer(containers.DeclarativeContainer):
         yandex_user_repository=repositories_container.yandex_user_repository,
     )
     yandex_accounts_service = providers.Factory(
-        YandexAccountsService, yandex_user_repository=repositories_container.yandex_user_repository
+        YandexAccountsService,
+        yandex_user_repository=repositories_container.yandex_user_repository,
+        metrica_lifecycle_repository=repositories_container.metrica_lifecycle_repository,
     )
     yandex_service_authorization_service = providers.Factory(
         YandexServiceAuthorizationService,
@@ -39,6 +41,7 @@ class ServicesContainer(containers.DeclarativeContainer):
     )
     yandex_metrica_counter_service = providers.Factory(
         YandexMetricaCounterService,
+        metrica_lifecycle_repository=repositories_container.metrica_lifecycle_repository,
         yandex_metrica_counter_repository=repositories_container.yandex_metrica_counter_repository,
         yandex_user_repository=repositories_container.yandex_user_repository,
     )
