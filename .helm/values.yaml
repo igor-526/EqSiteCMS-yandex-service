@@ -1,0 +1,30 @@
+# Deployment settings
+name: eqcms-yandex-service
+componentsLabel: yandex-service
+replicaCount: 1
+namespace: cms
+
+# App settings
+secretName: eqsitecms-yandex-service-secret
+containerPort: 8000
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+metrics:
+  enabled: true
+  metricsPort: 9000
+  interval: 30s
+
+# Image settings
+image: ghcr.io/igor-526/eqsitecms-yandex-service
+imagePullSecertName: ghcr-secret
+imageTag: latest
+
+migration:
+  command: ["uv", "run", "alembic", "-c", "alembic.ini", "upgrade", "head"]
+  workingDir: /app/src
